@@ -2,6 +2,7 @@
 
 #include <assert.h>
 
+#include <alsa/asoundlib.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -163,14 +164,48 @@ static GLuint compileGLProgram()
 
 GLFWwindow *g_window = nullptr;
 surface_t *g_surface = nullptr;
+f32 g_audio_scale = 1.0f;
 
 static GLuint s_program = 0;
 static GLuint s_vao = 0;
 static GLuint s_texture = 0;
 
-error_t PlatformInit(i32 window_width, i32 window_height, const char *title,
-                     i32 surface_width, i32 surface_height)
+static audio_mixer_fn_t s_audio_mixer_fun;
+static PaStream *s_audio_stream;
+
+static int paAudioCallback(const void *input, void *output,
+                           unsigned long frame_count,
+                           const PaStreamCallbackTimeInfo *time_info,
+                           PaStreamCallbackFlags status_flags, void *user_data)
 {
+    float *out = (float *)output;
+
+    if (s_audio_mixer_fun)
+    {
+        s_audio_mixer_fun((f32 *)output, (u32)frame_count, user_data);
+    }
+
+    return 0;
+}
+
+// this is used to silence ALSA errors
+// TODO: write to error log
+static void ignoringAlsaErrorHandler(const char *file, int line,
+                                     const char *function, int errcode,
+                                     const char *fmt, ...)
+{
+    ((void)file);
+    ((void)line);
+    ((void)function);
+    ((void)errcode);
+    ((void)fmt);
+}
+
+error_t PlatformInit(const platform_config_t *config)
+{
+
+    s_audio_mixer_fun = config->audio_mixer_function;
+
     glfwSetErrorCallback(errorCallback);
 
     if (!glfwInit())
@@ -183,8 +218,8 @@ error_t PlatformInit(i32 window_width, i32 window_height, const char *title,
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    g_window =
-        glfwCreateWindow(window_width, window_height, title, nullptr, nullptr);
+    g_window = glfwCreateWindow(config->window_width, config->window_height,
+                                config->window_title, nullptr, nullptr);
     if (g_window == nullptr)
     {
         fprintf(stderr, "Failed to create window!\n");
@@ -224,8 +259,8 @@ error_t PlatformInit(i32 window_width, i32 window_height, const char *title,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, surface_width, surface_height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, config->surface_width,
+                 config->surface_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
     CHECK_GL_ERROR();
 
@@ -233,12 +268,38 @@ error_t PlatformInit(i32 window_width, i32 window_height, const char *title,
     assert(g_surface != nullptr);
     MemZero(g_surface, sizeof(surface_t));
 
-    g_surface->width = surface_width;
-    g_surface->height = surface_height;
+    g_surface->width = config->surface_width;
+    g_surface->height = config->surface_height;
     g_surface->format = SurfaceFormat_RGBA;
     g_surface->pixels =
         MemAlloc(g_surface->width * g_surface->height * g_surface->format);
     assert(g_surface->pixels != nullptr);
+
+    snd_lib_error_set_handler(ignoringAlsaErrorHandler);
+    PaError paErr = Pa_Initialize();
+    if (paErr != paNoError)
+    {
+        fprintf(stderr, "Failed to initialize audio: %s!\n",
+                Pa_GetErrorText(paErr));
+        return ERROR_FAILED;
+    }
+    paErr = Pa_OpenDefaultStream(
+        &s_audio_stream, 0, 2, paFloat32, AUDIO_SAMPLE_RATE,
+        paFramesPerBufferUnspecified, paAudioCallback, nullptr);
+    if (paErr != paNoError)
+    {
+        fprintf(stderr, "Failed to open default audio stream: %s!\n",
+                Pa_GetErrorText(paErr));
+        return ERROR_FAILED;
+    }
+
+    paErr = Pa_StartStream(s_audio_stream);
+    if (paErr != paNoError)
+    {
+        fprintf(stderr, "Failed to start audio stream: %s!\n",
+                Pa_GetErrorText(paErr));
+        return ERROR_FAILED;
+    }
 
     return ERROR_NO_ERROR;
 }
@@ -274,6 +335,9 @@ void PlatformPresent()
 
 void PlatformTerminate()
 {
+    Pa_StopStream(s_audio_stream);
+    Pa_CloseStream(s_audio_stream);
+    Pa_Terminate();
     MemFree(g_surface->pixels);
     MemFree(g_surface);
     glDeleteTextures(1, &s_texture);
