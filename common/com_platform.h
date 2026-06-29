@@ -2,7 +2,7 @@
 #define PTQ_COMMON_PLATFORM_H_
 
 #include <GLFW/glfw3.h>
-#include <portaudio.h>
+#include <miniaudio.h>
 
 #include "com_types.h"
 

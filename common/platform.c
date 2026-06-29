@@ -2,7 +2,6 @@
 
 #include <assert.h>
 
-#include <alsa/asoundlib.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -92,17 +91,6 @@ static void errorCallback(int error, const char *description)
             description);
 }
 
-static void xAbortOnGLError(const char *filename, int line)
-{
-    GLenum glerr = GL_NO_ERROR;
-    if ((glerr = glGetError()) != GL_NO_ERROR)
-    {
-        fprintf(stderr, "%s:%d: OpenGL error: %x\n", filename, line, glerr);
-        abort();
-    }
-}
-#define abortOnGLError() xAbortOnGLError(__FILE__, __LINE__)
-
 static GLuint compileGLProgram()
 {
     GLuint vshader = ptq_glCreateShader(GL_VERTEX_SHADER);
@@ -171,34 +159,15 @@ static GLuint s_vao = 0;
 static GLuint s_texture = 0;
 
 static audio_mixer_fn_t s_audio_mixer_fun;
-static PaStream *s_audio_stream;
+static ma_device s_device;
 
-static int paAudioCallback(const void *input, void *output,
-                           unsigned long frame_count,
-                           const PaStreamCallbackTimeInfo *time_info,
-                           PaStreamCallbackFlags status_flags, void *user_data)
+static void maDataCallback(ma_device *device, void *output, const void *input,
+                           ma_uint32 frame_count)
 {
-    float *out = (float *)output;
-
     if (s_audio_mixer_fun)
     {
-        s_audio_mixer_fun((f32 *)output, (u32)frame_count, user_data);
+        s_audio_mixer_fun((f32 *)output, (u32)frame_count, device->pUserData);
     }
-
-    return 0;
-}
-
-// this is used to silence ALSA errors
-// TODO: write to error log
-static void ignoringAlsaErrorHandler(const char *file, int line,
-                                     const char *function, int errcode,
-                                     const char *fmt, ...)
-{
-    ((void)file);
-    ((void)line);
-    ((void)function);
-    ((void)errcode);
-    ((void)fmt);
 }
 
 error_t PlatformInit(const platform_config_t *config)
@@ -275,29 +244,23 @@ error_t PlatformInit(const platform_config_t *config)
         MemAlloc(g_surface->width * g_surface->height * g_surface->format);
     assert(g_surface->pixels != nullptr);
 
-    snd_lib_error_set_handler(ignoringAlsaErrorHandler);
-    PaError paErr = Pa_Initialize();
-    if (paErr != paNoError)
+    ma_device_config ma_config;
+    ma_config = ma_device_config_init(ma_device_type_playback);
+    ma_config.playback.format = ma_format_f32;
+    ma_config.playback.channels = 2;
+    ma_config.sampleRate = (ma_uint32)AUDIO_SAMPLE_RATE;
+    ma_config.dataCallback = maDataCallback;
+    ma_config.pUserData = nullptr;
+
+    if (ma_device_init(nullptr, &ma_config, &s_device) != MA_SUCCESS)
     {
-        fprintf(stderr, "Failed to initialize audio: %s!\n",
-                Pa_GetErrorText(paErr));
-        return ERROR_FAILED;
-    }
-    paErr = Pa_OpenDefaultStream(
-        &s_audio_stream, 0, 2, paFloat32, AUDIO_SAMPLE_RATE,
-        paFramesPerBufferUnspecified, paAudioCallback, nullptr);
-    if (paErr != paNoError)
-    {
-        fprintf(stderr, "Failed to open default audio stream: %s!\n",
-                Pa_GetErrorText(paErr));
+        fprintf(stderr, "Failed to open playback device!\n");
         return ERROR_FAILED;
     }
 
-    paErr = Pa_StartStream(s_audio_stream);
-    if (paErr != paNoError)
+    if (ma_device_start(&s_device) != MA_SUCCESS)
     {
-        fprintf(stderr, "Failed to start audio stream: %s!\n",
-                Pa_GetErrorText(paErr));
+        fprintf(stderr, "Failed to start playback device!\n");
         return ERROR_FAILED;
     }
 
@@ -335,9 +298,7 @@ void PlatformPresent()
 
 void PlatformTerminate()
 {
-    Pa_StopStream(s_audio_stream);
-    Pa_CloseStream(s_audio_stream);
-    Pa_Terminate();
+    ma_device_uninit(&s_device);
     MemFree(g_surface->pixels);
     MemFree(g_surface);
     glDeleteTextures(1, &s_texture);

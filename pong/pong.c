@@ -97,11 +97,8 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    GLfloat clear_color[] = {0.12f, 0.13f, 0.11f, 1.0f};
-
     f64 t0 = glfwGetTime();
     u64 frame_count = 0;
-    int framebuffer[2] = {0};
     while (!glfwWindowShouldClose(g_window))
     {
         glfwPollEvents();
