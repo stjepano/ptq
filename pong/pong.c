@@ -51,11 +51,6 @@ sine_wave_t tone_b = {.phase = 0, .freq = 330};
 
 static void sineWaveSamples(sine_wave_t *s, f32 *output, u32 frame_count)
 {
-    // y = sin(2*Pi*f*t)
-    // t = total_frame_count / sample_rate
-    // y = sin(2*Pi*f/sample_rate * total_frame_count)
-    // y = sin(sum[i < total_frame_count](2*Pi*f/sample_rate))
-    // phase = sum[i < total_frame_count](2*Pi*f/sample_rate)
     for (i32 i = 0; i < frame_count; i++)
     {
         f32 sample = sin(s->phase);
