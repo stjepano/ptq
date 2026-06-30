@@ -18,25 +18,32 @@ extern GLFWwindow *g_window;
 extern surface_t *g_surface;
 extern f32 g_audio_scale;
 
-static void fillSurface()
+#define OFFSET_SPEED 500.0f
+static f32 s_x_offset = 0;
+static f32 s_y_offset = 0;
+
+static void drawGradient()
 {
     for (i32 row = 0; row < g_surface->height; row++)
     {
         for (i32 col = 0; col < g_surface->width; col++)
         {
-            u8 *ptr = g_surface->pixels +
-                      ((row * g_surface->width * g_surface->format) +
-                       (col * g_surface->format));
-            u32 red = ((col >> 5) << 5) % 256;
-            u32 blue = ((row >> 5) << 5) % 256;
+            u32 *ptr = SurfacePixelPtr(g_surface, col, row);
 
-            u32 color = 0xFF000000;
-            color |= blue << 16;
-            color |= red;
+            u32 red = (((u32)(col + s_x_offset) >> 5) << 5) % 256;
+            u32 blue = (((u32)(row + s_y_offset) >> 5) << 5) % 256;
 
-            *((u32 *)ptr) = color;
+            u32 color = EncodeRGBA(red, 0, blue, 0xff);
+            *ptr = color;
         }
     }
+}
+
+static void drawGreenBox()
+{
+
+    irect_t rect = {10, 10, 50, 30};
+    SurfaceFillRect(g_surface, &rect, 0xFF00FF00);
 }
 
 typedef struct
@@ -45,9 +52,8 @@ typedef struct
     f32 freq;
 } sine_wave_t;
 
-sine_wave_t sine = {.phase = 0, .freq = 400};
-sine_wave_t tone_a = {.phase = 0, .freq = 220};
-sine_wave_t tone_b = {.phase = 0, .freq = 330};
+sine_wave_t mid_c_tone = {.phase = 0, .freq = 260};
+sine_wave_t mid_e_tone = {.phase = 0, .freq = 400};
 
 static void sineWaveSamples(sine_wave_t *s, f32 *output, u32 frame_count)
 {
@@ -78,16 +84,18 @@ static void audioMixer(f32 *output, u32 frame_count, void *user_data)
 {
     ((void)user_data);
     MemZero(output, sizeof(f32) * frame_count * 2);
-    sineWaveSamples(&sine, output, frame_count);
-    sineWaveSamples(&tone_a, output, frame_count);
-    sineWaveSamples(&tone_b, output, frame_count);
+    sineWaveSamples(&mid_c_tone, output, frame_count);
+    sineWaveSamples(&mid_e_tone, output, frame_count);
     scaleSamples(output, frame_count);
 }
 
-#define FREQ_CHANGE_PER_SECOND 400.0
+#define UPDATE_FREQUENCY 60.0
+#define UPDATE_PERIOD (1.0 / UPDATE_FREQUENCY)
+#define UPDATE_ACCUMULATOR_CAP (3.0 * UPDATE_PERIOD)
+
 int main(int argc, char **argv)
 {
-    g_audio_scale = 0.25f;
+    g_audio_scale = 0.05f;
     platform_config_t conf = {.window_width = WINDOW_WIDTH,
                               .window_height = WINDOW_HEIGHT,
                               .window_title = WINDOW_TITLE,
@@ -101,36 +109,59 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    f64 update_accumulator = UPDATE_PERIOD;
+    u64 update_count = 0;
+
     f64 t0 = glfwGetTime();
+    f64 t1 = t0;
     u64 frame_count = 0;
-    f64 t = t0;
-    f64 dt = 0.0;
-    ((void)dt);
+    f64 delta_t_frame = 0.0;
     while (!glfwWindowShouldClose(g_window))
     {
         glfwPollEvents();
 
-        sine.freq =
-            400.0 + 200.0f * sin(2.0f * M_PI * 1.0f * (glfwGetTime() - t0));
-
-        if (glfwGetKey(g_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        update_accumulator += delta_t_frame;
+        update_accumulator = MIN(update_accumulator, UPDATE_ACCUMULATOR_CAP);
+        while (update_accumulator >= UPDATE_PERIOD)
         {
-            glfwSetWindowShouldClose(g_window, true);
+            if (glfwGetKey(g_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            {
+                glfwSetWindowShouldClose(g_window, true);
+            }
+            if (glfwGetKey(g_window, GLFW_KEY_UP) == GLFW_PRESS)
+            {
+                s_y_offset -= (OFFSET_SPEED * UPDATE_PERIOD);
+            }
+            if (glfwGetKey(g_window, GLFW_KEY_DOWN) == GLFW_PRESS)
+            {
+                s_y_offset += (OFFSET_SPEED * UPDATE_PERIOD);
+            }
+            if (glfwGetKey(g_window, GLFW_KEY_LEFT) == GLFW_PRESS)
+            {
+                s_x_offset -= (OFFSET_SPEED * UPDATE_PERIOD);
+            }
+            if (glfwGetKey(g_window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            {
+                s_x_offset += (OFFSET_SPEED * UPDATE_PERIOD);
+            }
+
+            drawGradient();
+            drawGreenBox();
+
+            update_accumulator -= UPDATE_PERIOD;
+            update_count++;
         }
 
-        fillSurface();
-
         PlatformPresent();
-
-        glfwSwapBuffers(g_window);
         frame_count++;
         f64 tmpT = glfwGetTime();
-        dt = tmpT - t;
-        t = tmpT;
+        delta_t_frame = tmpT - t1;
+        t1 = tmpT;
     }
-    f64 delta_t = glfwGetTime() - t0;
-    f64 fps = ((f64)frame_count) / delta_t;
-    fprintf(stdout, "FPS: %.6f", fps);
+    f64 loop_time = glfwGetTime() - t0;
+    f64 fps = ((f64)frame_count) / loop_time;
+    f64 ups = ((f64)update_count) / loop_time;
+    fprintf(stdout, "FPS: %.6f, UPS: %.6f\n", fps, ups);
 
     PlatformTerminate();
     return 0;

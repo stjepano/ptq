@@ -196,7 +196,7 @@ error_t PlatformInit(const platform_config_t *config)
     }
 
     glfwMakeContextCurrent(g_window);
-    glfwSwapInterval(0);
+    glfwSwapInterval(1);
 
     loadGl();
     glGetError();
@@ -239,9 +239,8 @@ error_t PlatformInit(const platform_config_t *config)
 
     g_surface->width = config->surface_width;
     g_surface->height = config->surface_height;
-    g_surface->format = SurfaceFormat_RGBA;
     g_surface->pixels =
-        MemAlloc(g_surface->width * g_surface->height * g_surface->format);
+        MemAlloc(g_surface->width * g_surface->height * sizeof(u32));
     assert(g_surface->pixels != nullptr);
 
     ma_device_config ma_config;
@@ -268,7 +267,6 @@ error_t PlatformInit(const platform_config_t *config)
 }
 
 GLfloat s_clear_color[4] = {0, 0, 0, 1.0f};
-#define MIN(a, b) ((a < b) ? a : b)
 void PlatformPresent()
 {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_surface->width, g_surface->height,
@@ -279,21 +277,22 @@ void PlatformPresent()
     glViewport(0, 0, framebuffer[0], framebuffer[1]);
     ptq_glClearBufferfv(GL_COLOR, 0, s_clear_color);
 
-    if (framebuffer[0] < g_surface->width || framebuffer[1] < g_surface->height)
+    if (framebuffer[0] >= g_surface->width &&
+        framebuffer[1] >= g_surface->height)
     {
-        return;
+        i32 sx = framebuffer[0] / g_surface->width;
+        i32 sy = framebuffer[1] / g_surface->height;
+
+        i32 scale = MIN(sx, sy);
+
+        i32 x = (framebuffer[0] - (g_surface->width * scale)) / 2;
+        i32 y = (framebuffer[1] - (g_surface->height * scale)) / 2;
+        glViewport(x, y, g_surface->width * scale, g_surface->height * scale);
+
+        ptq_glDrawArrays(GL_TRIANGLES, 0, 3);
     }
 
-    i32 sx = framebuffer[0] / g_surface->width;
-    i32 sy = framebuffer[1] / g_surface->height;
-
-    i32 scale = MIN(sx, sy);
-
-    i32 x = (framebuffer[0] - (g_surface->width * scale)) / 2;
-    i32 y = (framebuffer[1] - (g_surface->height * scale)) / 2;
-    glViewport(x, y, g_surface->width * scale, g_surface->height * scale);
-
-    ptq_glDrawArrays(GL_TRIANGLES, 0, 3);
+    glfwSwapBuffers(g_window);
 }
 
 void PlatformTerminate()
