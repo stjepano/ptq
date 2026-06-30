@@ -22,6 +22,8 @@ extern f32 g_audio_scale;
 static f32 s_x_offset = 0;
 static f32 s_y_offset = 0;
 
+#define MASTER_VOLUME 0.05f
+
 static void drawGradient()
 {
     for (i32 row = 0; row < g_surface->height; row++)
@@ -75,8 +77,8 @@ static void scaleSamples(f32 *output, u32 frame_count)
 {
     for (i32 i = 0; i < frame_count; i++)
     {
-        *output++ *= g_audio_scale;
-        *output++ *= g_audio_scale;
+        *output++ *= MASTER_VOLUME;
+        *output++ *= MASTER_VOLUME;
     }
 }
 
@@ -95,7 +97,6 @@ static void audioMixer(f32 *output, u32 frame_count, void *user_data)
 
 int main(int argc, char **argv)
 {
-    g_audio_scale = 0.05f;
     platform_config_t conf = {.window_width = WINDOW_WIDTH,
                               .window_height = WINDOW_HEIGHT,
                               .window_title = WINDOW_TITLE,
@@ -145,14 +146,14 @@ int main(int argc, char **argv)
                 s_x_offset += (OFFSET_SPEED * UPDATE_PERIOD);
             }
 
-            drawGradient();
-            drawGreenBox();
-
             update_accumulator -= UPDATE_PERIOD;
             update_count++;
         }
 
+        drawGradient();
+        drawGreenBox();
         PlatformPresent();
+
         frame_count++;
         f64 tmpT = glfwGetTime();
         delta_t_frame = tmpT - t1;

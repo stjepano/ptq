@@ -152,7 +152,6 @@ static GLuint compileGLProgram()
 
 GLFWwindow *g_window = nullptr;
 surface_t *g_surface = nullptr;
-f32 g_audio_scale = 1.0f;
 
 static GLuint s_program = 0;
 static GLuint s_vao = 0;
