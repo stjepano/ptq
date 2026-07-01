@@ -1,12 +1,29 @@
-#include "com_platform.h"
+#include "ptq.h"
 
 #include <assert.h>
-
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "com_memory.h"
-#include "com_surface.h"
+void *MemAlloc(u64 n)
+{
+    return malloc(n);
+}
+
+void *MemRealloc(void *ptr, u64 n)
+{
+    return realloc(ptr, n);
+}
+
+void MemFree(void *ptr)
+{
+    free(ptr);
+}
+
+void MemZero(void *ptr, u64 n)
+{
+    memset(ptr, 0, n);
+}
 
 #define DECLARE_GL_FUNC(name, ret, ...)                                        \
     typedef ret (*PFN_##name)(__VA_ARGS__);                                    \
@@ -303,4 +320,35 @@ void PlatformTerminate()
     ptq_glDeleteVertexArrays(1, &s_vao);
     ptq_glDeleteProgram(s_program);
     glfwTerminate();
+}
+
+void SurfaceFillRect(surface_t *s, const irect_t *rect, u32 color)
+{
+    assert(s != nullptr && rect != nullptr);
+    irect_t trect = {0};
+    irect_t surface_rect = {0, 0, s->width, s->height};
+    IRectIRectIntersection(&trect, rect, &surface_rect);
+
+    if (trect.w <= 0 || trect.h <= 0)
+    {
+        return;
+    }
+
+    for (i32 row = 0; row < trect.h; row++)
+    {
+        for (i32 col = 0; col < trect.w; col++)
+        {
+            u32 *pixel =
+                (u32 *)SurfacePixelPtr(s, col + trect.x, row + trect.y);
+            *pixel = color;
+        }
+    }
+}
+
+void IRectIRectIntersection(irect_t *out, const irect_t *a, const irect_t *b)
+{
+    out->x = MAX(a->x, b->x);
+    out->y = MAX(a->y, b->y);
+    out->w = MIN(a->x + a->w, b->x + b->w) - out->x;
+    out->h = MIN(a->y + a->h, b->y + b->h) - out->y;
 }

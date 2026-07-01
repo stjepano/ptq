@@ -1,11 +1,9 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include "com_memory.h"
-#include "com_platform.h"
-#include "com_surface.h"
-
 #include <math.h>
+
+#include "ptq.h"
 
 #define WINDOW_WIDTH 1920
 #define WINDOW_HEIGHT 1080
