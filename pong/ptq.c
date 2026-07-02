@@ -1,6 +1,7 @@
 #include "ptq.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -174,23 +175,112 @@ static GLuint s_program = 0;
 static GLuint s_vao = 0;
 static GLuint s_texture = 0;
 
-static audio_mixer_fn_t s_audio_mixer_fun;
 static ma_device s_device;
+
+typedef struct
+{
+    i32 cursor;
+    sound_t *snd;
+} playing_sound_t;
+
+#define MAX_PLAYING_SOUNDS 4
+
+#define MASTER_VOLUME 0.2f
+
+#define FADE_IN_SAMPLES 400
+#define FADE_OUT_SAMPLES 400
+
+static playing_sound_t s_playing_sound[MAX_PLAYING_SOUNDS] = {0};
 
 static void maDataCallback(ma_device *device, void *output, const void *input,
                            ma_uint32 frame_count)
 {
-    if (s_audio_mixer_fun)
+    // TODO: synchronization
+    // Not on main thread
+    i32 playing_sounds_count = 0;
+    MemZero(output, sizeof(f32) * 2 * frame_count);
+    for (i32 i = 0; i < MAX_PLAYING_SOUNDS; i++)
     {
-        s_audio_mixer_fun((f32 *)output, (u32)frame_count, device->pUserData);
+        playing_sound_t *psnd = &s_playing_sound[i];
+        if (psnd->snd)
+        {
+            // TODO: while working lock it
+            sound_t *snd = psnd->snd;
+
+            if (psnd->cursor >= snd->frame_count)
+            {
+                // sound was done
+                psnd->snd = nullptr;
+                psnd->cursor = 0;
+                continue;
+            }
+
+            u32 remaining_frames = snd->frame_count - psnd->cursor;
+            u32 frames_to_deliver = MIN(remaining_frames, frame_count);
+
+            f32 *out = (f32 *)output;
+            f32 fade = 1.0f;
+            for (u32 j = 0; j < frames_to_deliver; j++)
+            {
+                if (psnd->cursor + j < FADE_IN_SAMPLES)
+                {
+                    // fade at sound start
+                    fade = (f32)j / ((f32)FADE_IN_SAMPLES);
+                }
+                else if (psnd->cursor + j >=
+                         snd->frame_count - FADE_OUT_SAMPLES)
+                {
+                    // when sound is close to end fade out
+                    fade = 1.0f - (f32)((psnd->cursor + j) -
+                                        (snd->frame_count - FADE_OUT_SAMPLES)) /
+                                      (f32)FADE_OUT_SAMPLES;
+                }
+                *out++ += snd->buffer[j + psnd->cursor] * fade; // left
+                *out++ += snd->buffer[j + psnd->cursor] * fade; // right
+            }
+            playing_sounds_count++;
+            psnd->cursor += frames_to_deliver;
+        }
+    }
+
+    if (playing_sounds_count)
+    {
+        // adjust volume
+        f32 maxAbs = 0.0f;
+        f32 *out = (f32 *)output;
+        for (u32 i = 0; i < frame_count; i++)
+        {
+            *out *= MASTER_VOLUME;
+            if (fabs(*out) > maxAbs)
+            {
+                maxAbs = *out;
+            }
+            out++;
+            *out *= MASTER_VOLUME;
+            if (fabs(*out) > maxAbs)
+            {
+                maxAbs = *out;
+            }
+            out++;
+        }
+
+        if (maxAbs > 1.0f)
+        {
+            DEBUG_PRINT_I32(playing_sounds_count);
+            DEBUG_PRINT_F32(maxAbs);
+            f32 oneOverMaxAbs = 1.0f / maxAbs;
+            out = (f32 *)output;
+            for (u32 i = 0; i < frame_count; i++)
+            {
+                *out++ *= oneOverMaxAbs;
+                *out++ *= oneOverMaxAbs;
+            }
+        }
     }
 }
 
 error_t PlatformInit(const platform_config_t *config)
 {
-
-    s_audio_mixer_fun = config->audio_mixer_function;
-
     glfwSetErrorCallback(errorCallback);
 
     if (!glfwInit())
@@ -351,4 +441,20 @@ void IRectIRectIntersection(irect_t *out, const irect_t *a, const irect_t *b)
     out->y = MAX(a->y, b->y);
     out->w = MIN(a->x + a->w, b->x + b->w) - out->x;
     out->h = MIN(a->y + a->h, b->y + b->h) - out->y;
+}
+
+void PlaySound(sound_t *snd)
+{
+    for (i32 i = 0; i < MAX_PLAYING_SOUNDS; i++)
+    {
+        // todo: atomic load
+        if (s_playing_sound[i].snd != nullptr)
+        {
+            continue;
+        }
+
+        s_playing_sound[i].snd = snd;
+        s_playing_sound[i].cursor = 0;
+        break;
+    }
 }

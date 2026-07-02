@@ -20,8 +20,6 @@ extern f32 g_audio_scale;
 static f32 s_x_offset = 0;
 static f32 s_y_offset = 0;
 
-#define MASTER_VOLUME 0.05f
-
 static void drawGradient()
 {
     for (i32 row = 0; row < g_surface->height; row++)
@@ -46,52 +44,25 @@ static void drawGreenBox()
     SurfaceFillRect(g_surface, &rect, 0xFF00FF00);
 }
 
-typedef struct
-{
-    f32 phase;
-    f32 freq;
-} sine_wave_t;
-
-sine_wave_t mid_c_tone = {.phase = 0, .freq = 260};
-sine_wave_t mid_e_tone = {.phase = 0, .freq = 400};
-
-static void sineWaveSamples(sine_wave_t *s, f32 *output, u32 frame_count)
-{
-    for (i32 i = 0; i < frame_count; i++)
-    {
-        f32 sample = sin(s->phase);
-        s->phase += 2.0f * M_PI * (f32)s->freq / (f32)AUDIO_SAMPLE_RATE;
-        if (s->phase > 2.0f * M_PI)
-        {
-            s->phase -= (2.0f * M_PI);
-        }
-
-        *output++ += sample;
-        *output++ += sample;
-    }
-}
-
-static void scaleSamples(f32 *output, u32 frame_count)
-{
-    for (i32 i = 0; i < frame_count; i++)
-    {
-        *output++ *= MASTER_VOLUME;
-        *output++ *= MASTER_VOLUME;
-    }
-}
-
-static void audioMixer(f32 *output, u32 frame_count, void *user_data)
-{
-    ((void)user_data);
-    MemZero(output, sizeof(f32) * frame_count * 2);
-    sineWaveSamples(&mid_c_tone, output, frame_count);
-    sineWaveSamples(&mid_e_tone, output, frame_count);
-    scaleSamples(output, frame_count);
-}
-
 #define UPDATE_FREQUENCY 60.0
 #define UPDATE_PERIOD (1.0 / UPDATE_FREQUENCY)
 #define UPDATE_ACCUMULATOR_CAP (3.0 * UPDATE_PERIOD)
+
+static void genSineWaveSamples(f32 freq, f32 *output, u32 output_len)
+{
+    f32 phase = 0.0f;
+    for (i32 i = 0; i < output_len; i++)
+    {
+        f32 sample = sin(phase);
+        phase += 2.0f * M_PI * (f32)freq / (f32)AUDIO_SAMPLE_RATE;
+        if (phase > 2.0f * M_PI)
+        {
+            phase -= (2.0f * M_PI);
+        }
+
+        *output++ = sample;
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -99,14 +70,19 @@ int main(int argc, char **argv)
                               .window_height = WINDOW_HEIGHT,
                               .window_title = WINDOW_TITLE,
                               .surface_width = SURFACE_WIDTH,
-                              .surface_height = SURFACE_HEIGHT,
-                              .audio_mixer_function = audioMixer};
+                              .surface_height = SURFACE_HEIGHT};
     error_t err = PlatformInit(&conf);
     if (err != ERROR_NO_ERROR)
     {
         fprintf(stderr, "Failed to initialize platform!\n");
         return 1;
     }
+
+#define SAMPLE_COUNT 22050
+    f32 sound_samples[SAMPLE_COUNT];
+    genSineWaveSamples(330, sound_samples, SAMPLE_COUNT);
+
+    sound_t sound = {.frame_count = SAMPLE_COUNT, .buffer = sound_samples};
 
     f64 update_accumulator = UPDATE_PERIOD;
     u64 update_count = 0;
@@ -115,8 +91,12 @@ int main(int argc, char **argv)
     f64 t1 = t0;
     u64 frame_count = 0;
     f64 delta_t_frame = 0.0;
+    bool space_pressed_prev_frame = false;
     while (!glfwWindowShouldClose(g_window))
     {
+        space_pressed_prev_frame =
+            (glfwGetKey(g_window, GLFW_KEY_SPACE) == GLFW_PRESS);
+
         glfwPollEvents();
 
         update_accumulator += delta_t_frame;
@@ -142,6 +122,11 @@ int main(int argc, char **argv)
             if (glfwGetKey(g_window, GLFW_KEY_RIGHT) == GLFW_PRESS)
             {
                 s_x_offset += (OFFSET_SPEED * UPDATE_PERIOD);
+            }
+            if (!space_pressed_prev_frame &&
+                (glfwGetKey(g_window, GLFW_KEY_SPACE) == GLFW_PRESS))
+            {
+                PlaySound(&sound);
             }
 
             update_accumulator -= UPDATE_PERIOD;

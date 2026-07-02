@@ -28,6 +28,9 @@ typedef i32 error_t;
 #define ASSERT(x) assert(x)
 #define UNUSED(x) ((void)x)
 
+#define DEBUG_PRINT_I32(var) printf(#var ": %d\n", var)
+#define DEBUG_PRINT_F32(var) printf(#var ": %.6f\n", var)
+
 // Memory
 
 void *MemAlloc(u64 n);
@@ -50,7 +53,6 @@ void IRectIRectIntersection(irect_t *out, const irect_t *a, const irect_t *b);
 // Platform
 
 #define AUDIO_SAMPLE_RATE 44100.0
-typedef void (*audio_mixer_fn_t)(f32 *, u32, void *);
 
 typedef struct
 {
@@ -59,7 +61,6 @@ typedef struct
     const char *window_title;
     i32 surface_width;
     i32 surface_height;
-    audio_mixer_fn_t audio_mixer_function;
 } platform_config_t;
 
 error_t PlatformInit(const platform_config_t *config);
@@ -87,6 +88,12 @@ void SurfaceFillRect(surface_t *s, const irect_t *rect, u32 color);
 
 // Sound
 
-void PlaySound(sound_t *sound);
+typedef struct
+{
+    i32 frame_count;
+    f32 *buffer;
+} sound_t;
+
+void PlaySound(sound_t *snd);
 
 #endif // PTQ_H_
