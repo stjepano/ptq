@@ -48,7 +48,7 @@ typedef struct
     i32 x, y, w, h;
 } irect_t;
 
-void IRectIRectIntersection(irect_t *out, const irect_t *a, const irect_t *b);
+void IntersectIRectIRect(irect_t *out, const irect_t *a, const irect_t *b);
 
 // Platform
 
@@ -61,12 +61,12 @@ typedef struct
     const char *window_title;
     i32 surface_width;
     i32 surface_height;
-} platform_config_t;
+} init_config_t;
 
-error_t PlatformInit(const platform_config_t *config);
+error_t Init(const init_config_t *config);
 
-void PlatformPresent();
-void PlatformTerminate();
+void PresentFrame();
+void Terminate();
 
 // Surface
 
@@ -81,10 +81,9 @@ typedef struct
     ((((a) & 0xff) << 24) | (((b) & 0xff) << 16) | (((g) & 0xff) << 8) |       \
      ((r) & 0xff))
 
-#define SurfacePixelPtr(sptr, x, y)                                            \
-    ((sptr)->pixels + (((y) * (sptr)->width)) + (x))
+#define GetPixelPtr(sptr, x, y) ((sptr)->pixels + (((y) * (sptr)->width)) + (x))
 
-void SurfaceFillRect(surface_t *s, const irect_t *rect, u32 color);
+void FillRect(surface_t *s, const irect_t *rect, u32 color);
 
 // Sound
 

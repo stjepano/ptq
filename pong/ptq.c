@@ -192,8 +192,8 @@ typedef struct
 
 static playing_sound_t s_playing_sound[MAX_PLAYING_SOUNDS] = {0};
 
-static void maDataCallback(ma_device *device, void *output, const void *input,
-                           ma_uint32 frame_count)
+static void maAudioCallback(ma_device *device, void *output, const void *input,
+                            ma_uint32 frame_count)
 {
     // TODO: synchronization
     // Not on main thread
@@ -279,7 +279,7 @@ static void maDataCallback(ma_device *device, void *output, const void *input,
     }
 }
 
-error_t PlatformInit(const platform_config_t *config)
+error_t Init(const init_config_t *config)
 {
     glfwSetErrorCallback(errorCallback);
 
@@ -354,7 +354,7 @@ error_t PlatformInit(const platform_config_t *config)
     ma_config.playback.format = ma_format_f32;
     ma_config.playback.channels = 2;
     ma_config.sampleRate = (ma_uint32)AUDIO_SAMPLE_RATE;
-    ma_config.dataCallback = maDataCallback;
+    ma_config.dataCallback = maAudioCallback;
     ma_config.pUserData = nullptr;
 
     if (ma_device_init(nullptr, &ma_config, &s_device) != MA_SUCCESS)
@@ -373,7 +373,7 @@ error_t PlatformInit(const platform_config_t *config)
 }
 
 GLfloat s_clear_color[4] = {0, 0, 0, 1.0f};
-void PlatformPresent()
+void PresentFrame()
 {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_surface->width, g_surface->height,
                     GL_RGBA, GL_UNSIGNED_BYTE, g_surface->pixels);
@@ -401,7 +401,7 @@ void PlatformPresent()
     glfwSwapBuffers(g_window);
 }
 
-void PlatformTerminate()
+void Terminate()
 {
     ma_device_uninit(&s_device);
     MemFree(g_surface->pixels);
@@ -412,12 +412,12 @@ void PlatformTerminate()
     glfwTerminate();
 }
 
-void SurfaceFillRect(surface_t *s, const irect_t *rect, u32 color)
+void FillRect(surface_t *s, const irect_t *rect, u32 color)
 {
     assert(s != nullptr && rect != nullptr);
     irect_t trect = {0};
     irect_t surface_rect = {0, 0, s->width, s->height};
-    IRectIRectIntersection(&trect, rect, &surface_rect);
+    IntersectIRectIRect(&trect, rect, &surface_rect);
 
     if (trect.w <= 0 || trect.h <= 0)
     {
@@ -428,14 +428,13 @@ void SurfaceFillRect(surface_t *s, const irect_t *rect, u32 color)
     {
         for (i32 col = 0; col < trect.w; col++)
         {
-            u32 *pixel =
-                (u32 *)SurfacePixelPtr(s, col + trect.x, row + trect.y);
+            u32 *pixel = (u32 *)GetPixelPtr(s, col + trect.x, row + trect.y);
             *pixel = color;
         }
     }
 }
 
-void IRectIRectIntersection(irect_t *out, const irect_t *a, const irect_t *b)
+void IntersectIRectIRect(irect_t *out, const irect_t *a, const irect_t *b)
 {
     out->x = MAX(a->x, b->x);
     out->y = MAX(a->y, b->y);

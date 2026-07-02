@@ -26,7 +26,7 @@ static void drawGradient()
     {
         for (i32 col = 0; col < g_surface->width; col++)
         {
-            u32 *ptr = SurfacePixelPtr(g_surface, col, row);
+            u32 *ptr = GetPixelPtr(g_surface, col, row);
 
             u32 red = (((u32)(col + s_x_offset) >> 5) << 5) % 256;
             u32 blue = (((u32)(row + s_y_offset) >> 5) << 5) % 256;
@@ -41,7 +41,7 @@ static void drawGreenBox()
 {
 
     irect_t rect = {10, 10, 50, 30};
-    SurfaceFillRect(g_surface, &rect, 0xFF00FF00);
+    FillRect(g_surface, &rect, 0xFF00FF00);
 }
 
 #define UPDATE_FREQUENCY 60.0
@@ -66,12 +66,12 @@ static void genSineWaveSamples(f32 freq, f32 *output, u32 output_len)
 
 int main(int argc, char **argv)
 {
-    platform_config_t conf = {.window_width = WINDOW_WIDTH,
-                              .window_height = WINDOW_HEIGHT,
-                              .window_title = WINDOW_TITLE,
-                              .surface_width = SURFACE_WIDTH,
-                              .surface_height = SURFACE_HEIGHT};
-    error_t err = PlatformInit(&conf);
+    init_config_t conf = {.window_width = WINDOW_WIDTH,
+                          .window_height = WINDOW_HEIGHT,
+                          .window_title = WINDOW_TITLE,
+                          .surface_width = SURFACE_WIDTH,
+                          .surface_height = SURFACE_HEIGHT};
+    error_t err = Init(&conf);
     if (err != ERROR_NO_ERROR)
     {
         fprintf(stderr, "Failed to initialize platform!\n");
@@ -135,7 +135,7 @@ int main(int argc, char **argv)
 
         drawGradient();
         drawGreenBox();
-        PlatformPresent();
+        PresentFrame();
 
         frame_count++;
         f64 tmpT = glfwGetTime();
@@ -147,6 +147,6 @@ int main(int argc, char **argv)
     f64 ups = ((f64)update_count) / loop_time;
     fprintf(stdout, "FPS: %.6f, UPS: %.6f\n", fps, ups);
 
-    PlatformTerminate();
+    Terminate();
     return 0;
 }
